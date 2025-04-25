@@ -36,10 +36,11 @@ const maxmind = require('maxmind');
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-// Fonction de raccourcissement Cutt.ly avec 3 essais
+// Fonction de raccourcissement Cutt.ly avec tentatives infinies limitées à 20
 async function shortenWithCuttly(longUrl, baseSuffix) {
-  for (let i = 0; i <= 3; i++) {
-    let suffix = i === 0 ? baseSuffix : `${baseSuffix}-${i}`;
+  let attempt = 0;
+  while (attempt < 20) {
+    const suffix = attempt === 0 ? baseSuffix : `${baseSuffix}-${attempt}`;
     try {
       const response = await axios.get('https://cutt.ly/api/api.php', {
         params: {
@@ -54,9 +55,11 @@ async function shortenWithCuttly(longUrl, baseSuffix) {
         return data.url.shortLink;
       }
     } catch (err) {
-      console.error(`Erreur Cutt.ly (essai ${i}) :`, err.response?.data || err.message);
+      console.error(`Erreur Cutt.ly (essai ${attempt}) :`, err.response?.data || err.message);
     }
+    attempt++;
   }
+  console.error("❌ Impossible de raccourcir l'URL après 20 essais.");
   return null;
 }
 
@@ -70,7 +73,7 @@ async function logIp(req, res, redirectUrl = null) {
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
 
-  // Ignore les bots et "Inconnu-Inconnu"
+  // Ignore les bots et Inconnus
   if (!device.client?.name && !device.os?.name) {
     console.log(`⛔ Ignoré - Appareil inconnu pour IP ${ip}`);
     if (redirectUrl) {
@@ -234,12 +237,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const uniqueId = `${user.id}_${shortId}`;
     const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, '');
 
-    let generatedUrl;
-    if (['instagram', 'youtube', 'tiktok', 'facebook', 'x', 'discord'].includes(selection)) {
-      generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
-    } else {
-      generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
-    }
+    let generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
 
     const suffix = selection.replace(/\./g, '-');
     const shortLink = await shortenWithCuttly(generatedUrl, suffix) || generatedUrl;

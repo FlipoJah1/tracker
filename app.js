@@ -114,9 +114,10 @@ client.once(Events.ClientReady, () => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
+  // Gestion du bouton "generate_tracker"
   if (interaction.isButton() && interaction.customId === 'generate_tracker') {
     if (interaction.replied || interaction.deferred) return;
-await interaction.reply({ content: "🔄 Création de ton salon privé...", ephemeral: true });
+    await interaction.reply({ content: "🔄 Création de ton salon privé...", ephemeral: true });
 
     const guild = interaction.guild;
     const user = interaction.user;
@@ -166,45 +167,39 @@ await interaction.reply({ content: "🔄 Création de ton salon privé...", ephe
     if (fs.existsSync(CLIENTS_FILE)) {
       clients = JSON.parse(fs.readFileSync(CLIENTS_FILE));
     }
-
     clients[uniqueId] = privateChannel.id;
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
-
-    await interaction.editReply({
-      content: `✅ Ton salon privé est prêt : <#${privateChannel.id}>`,
-      ephemeral: true
-    });
-  }
-});
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isStringSelectMenu()) return;
-  if (interaction.customId !== 'select_tracker_type') return;
-
-  const guild = interaction.guild;
-  const user = interaction.user;
-  const channel = interaction.channel;
-  const selection = interaction.values[0];
-
-  const shortId = crypto.randomBytes(3).toString("hex");
-  const uniqueId = `${user.id}_${shortId}`;
-
-  let generatedUrl = `${TRACKER_BASE_URL}/${selection}?u=${uniqueId}`;
-
-  const shortLink = await shortenUrl(generatedUrl);
-
-  if (!shortLink) {
-    await channel.send(`❌ Impossible de raccourcir ton lien. Voici le lien brut :\n${generatedUrl}`);
-  } else {
-    await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);
   }
 
-  let clients = {};
-  if (fs.existsSync(CLIENTS_FILE)) {
-    clients = JSON.parse(fs.readFileSync(CLIENTS_FILE));
-  }
+  // Gestion du menu déroulant
+  if (interaction.isStringSelectMenu() && interaction.customId === 'select_tracker_type') {
+    if (interaction.replied || interaction.deferred) return;
+    await interaction.reply({ content: "🔗 Génération de ton lien...", ephemeral: true });
 
-  clients[uniqueId] = channel.id;
-  fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
+    const user = interaction.user;
+    const channel = interaction.channel;
+    const selection = interaction.values[0];
+    const shortId = crypto.randomBytes(3).toString("hex");
+    const uniqueId = `${user.id}_${shortId}`;
+
+    const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, ''); // Enlève le slash final
+    const generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
+
+    const shortLink = await shortenUrl(generatedUrl);
+
+    if (!shortLink) {
+      await channel.send(`❌ Impossible de raccourcir ton lien. Voici ton lien brut :\n${generatedUrl}`);
+    } else {
+      await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);
+    }
+
+    let clients = {};
+    if (fs.existsSync(CLIENTS_FILE)) {
+      clients = JSON.parse(fs.readFileSync(CLIENTS_FILE));
+    }
+    clients[uniqueId] = channel.id;
+    fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
+  }
 });
 
 client.login(DISCORD_TOKEN);

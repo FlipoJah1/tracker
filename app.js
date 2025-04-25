@@ -115,7 +115,8 @@ client.once(Events.ClientReady, () => {
 
 client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isButton() && interaction.customId === 'generate_tracker') {
-    await interaction.deferReply({ ephemeral: true });
+    if (interaction.replied || interaction.deferred) return;
+await interaction.reply({ content: "🔄 Création de ton salon privé...", ephemeral: true });
 
     const guild = interaction.guild;
     const user = interaction.user;

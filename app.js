@@ -25,7 +25,6 @@ app.use(cors());
 
 const port = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const TINYURL_API_TOKEN = process.env.TINYURL_API_TOKEN;
 const TRACKER_BASE_URL = process.env.TRACKER_BASE_URL;
 const CLIENTS_FILE = './clients.json';
 const deviceDetector = new DeviceDetector();
@@ -35,24 +34,8 @@ const maxmind = require('maxmind');
 (async () => {
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
-async function shortenUrl(url) {
-  try {
-    const response = await axios.post('https://api.tinyurl.com/create', {
-      url: url
-    }, {
-      headers: {
-        Authorization: `Bearer ${TINYURL_API_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    return response.data.data.tiny_url;
-  } catch (error) {
-    console.error('Erreur TinyURL :', error.response?.data || error.message);
-    return null;
-  }
-}
 
-// Routes Express
+// Serveur Express
 app.get('/:type', async (req, res) => {
   const { type } = req.params;
   const u = req.query.u;
@@ -97,8 +80,9 @@ app.get('/:type', async (req, res) => {
     return res.redirect(url);
   }
 
-  res.status(204).send(); // image, pdf, video
+  res.status(204).send(); // Pas de contenu pour image/pdf/video
 });
+
 app.listen(port, () => {
   console.log(`🚀 Serveur Express actif sur le port ${port}`);
 });
@@ -182,16 +166,13 @@ client.on(Events.InteractionCreate, async interaction => {
     const shortId = crypto.randomBytes(3).toString("hex");
     const uniqueId = `${user.id}_${shortId}`;
 
-    const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, ''); // Enlève le slash final
+    const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, '');
     const generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
 
-    const shortLink = await shortenUrl(generatedUrl);
+    // En attendant l'intégration Cutt.ly ➔ on utilise l'URL directe
+    const shortLink = generatedUrl;
 
-    if (!shortLink) {
-      await channel.send(`❌ Impossible de raccourcir ton lien. Voici ton lien brut :\n${generatedUrl}`);
-    } else {
-      await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);
-    }
+    await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);
 
     let clients = {};
     if (fs.existsSync(CLIENTS_FILE)) {

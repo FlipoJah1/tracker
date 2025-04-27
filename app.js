@@ -154,7 +154,7 @@ client.once(Events.ClientReady, async () => {
 
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const channels = await guild.channels.fetch();
-  const generationChannel = channels.find(c => c.name === '🎯・genere-mon-lien');
+  const generationChannel = channels.find(c => c.name === '🎯・générer-mon-lien');
 
   if (!generationChannel) {
     console.error('❌ Salon 🎯・genere-mon-lien introuvable.');

@@ -35,7 +35,7 @@ const maxmind = require('maxmind');
   lookup = await maxmind.open('./GeoLite2-City.mmdb');
 })();
 
-// Fonction pour raccourcir avec ton propre serveur shortlink
+// Fonction pour raccourcir avec serveur shortlink
 async function shortenWithInstantMediaShare(longUrl, customCode) {
   try {
     const response = await axios.post('https://instantmedia-share.onrender.com/shorten', {
@@ -128,7 +128,7 @@ async function logIp(req, res, redirectUrl = null) {
   }
 }
 
-// Routes Express pour tracker (facultatif si tu veux encore des routes locales)
+// Routes Express pour tracker
 app.get('/:type', async (req, res) => {
   const { type } = req.params;
 
@@ -143,14 +143,41 @@ app.get('/:type', async (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Serveur Express actif sur le port ${port}`);
 });
+
 // Discord Bot
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel]
 });
 
-client.once(Events.ClientReady, () => {
+client.once(Events.ClientReady, async () => {
   console.log(`🤖 Bot connecté en tant que ${client.user.tag}`);
+
+  const guild = await client.guilds.fetch(process.env.GUILD_ID);
+  const channels = await guild.channels.fetch();
+  const generationChannel = channels.find(c => c.name === '🎯・générer-mon-lien');
+
+  if (!generationChannel) {
+    console.error('❌ Salon génération non trouvé.');
+    return;
+  }
+
+  const existingMessages = await generationChannel.messages.fetch({ limit: 10 });
+  const alreadyHasButton = existingMessages.some(m => m.components.length > 0);
+
+  if (!alreadyHasButton) {
+    const generateButton = new ButtonBuilder()
+      .setCustomId('generate_tracker')
+      .setLabel('🎯 Générer mon lien')
+      .setStyle(ButtonStyle.Success);
+
+    const row = new ActionRowBuilder().addComponents(generateButton);
+
+    await generationChannel.send({
+      content: 'Clique sur le bouton pour générer ton lien tracker 👇',
+      components: [row]
+    });
+  }
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -209,7 +236,6 @@ client.on(Events.InteractionCreate, async interaction => {
     clients[uniqueId] = privateChannel.id;
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
 
-    // 🔥 Auto-suppression du salon après 15 minutes
     setTimeout(async () => {
       try {
         await privateChannel.delete();
@@ -217,7 +243,7 @@ client.on(Events.InteractionCreate, async interaction => {
       } catch (error) {
         console.error('Erreur suppression salon :', error.message);
       }
-    }, 15 * 60 * 1000); // 15 minutes
+    }, 15 * 60 * 1000);
   }
 
   if (interaction.isStringSelectMenu() && interaction.customId === 'select_tracker_type') {

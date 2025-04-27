@@ -182,7 +182,7 @@ client.once(Events.ClientReady, async () => {
 client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isButton() && interaction.customId === 'generate_tracker') {
     if (interaction.replied || interaction.deferred) return;
-    await interaction.reply({ content: "🔄 Création de ton salon privé...", ephemeral: true });
+    const replyMessage = await interaction.reply({ content: "🔄 Préparation de ton lien... Merci de patienter quelques secondes.", ephemeral: true });
 
     const guild = interaction.guild;
     const user = interaction.user;
@@ -206,6 +206,8 @@ client.on(Events.InteractionCreate, async interaction => {
     });
 
     await new Promise(resolve => setTimeout(resolve, 1000));
+
+    await replyMessage.edit({ content: `✅ Ton salon privé est prêt ici : <#${privateChannel.id}>` });
 
     const select = new StringSelectMenuBuilder()
       .setCustomId('select_tracker_type')

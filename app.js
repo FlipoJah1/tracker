@@ -143,7 +143,6 @@ app.get('/:type', async (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Serveur Express actif sur le port ${port}`);
 });
-
 // Discord Bot
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -155,10 +154,10 @@ client.once(Events.ClientReady, async () => {
 
   const guild = await client.guilds.fetch(process.env.GUILD_ID);
   const channels = await guild.channels.fetch();
-  const generationChannel = channels.find(c => c.name === '🎯・générer-mon-lien');
+  const generationChannel = channels.find(c => c.name === '🎯・genere-mon-lien');
 
   if (!generationChannel) {
-    console.error('❌ Salon génération non trouvé.');
+    console.error('❌ Salon 🎯・genere-mon-lien introuvable.');
     return;
   }
 
@@ -177,6 +176,9 @@ client.once(Events.ClientReady, async () => {
       content: 'Clique sur le bouton pour générer ton lien tracker 👇',
       components: [row]
     });
+    console.log('✅ Message de génération envoyé dans 🎯・genere-mon-lien');
+  } else {
+    console.log('ℹ️ Message de génération déjà présent, rien envoyé.');
   }
 });
 

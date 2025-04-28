@@ -251,10 +251,23 @@ client.on(Events.InteractionCreate, async interaction => {
 
   if (interaction.isStringSelectMenu() && interaction.customId === 'select_tracker_type') {
     if (interaction.replied || interaction.deferred) return;
-    await interaction.reply({ content: "🔗 Génération de ton lien...", ephemeral: true });
 
     const user = interaction.user;
     const channel = interaction.channel;
+    let clients = {};
+    if (fs.existsSync(CLIENTS_FILE)) {
+      clients = JSON.parse(fs.readFileSync(CLIENTS_FILE));
+    }
+
+    if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      const userLinks = Object.keys(clients).filter(key => key.startsWith(user.id)).length;
+      if (userLinks >= 5) {
+        return interaction.reply({ content: "🚫 Tu as atteint la limite de 5 liens créés.", ephemeral: true });
+      }
+    }
+
+    await interaction.reply({ content: "🔗 Génération de ton lien...", ephemeral: true });
+
     const selection = interaction.values[0];
     const shortId = crypto.randomBytes(3).toString("hex");
     const uniqueId = `${user.id}_${shortId}`;
@@ -267,10 +280,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
     await channel.send(`✅ Ton lien est prêt :\n${shortLink}`);
 
-    let clients = {};
-    if (fs.existsSync(CLIENTS_FILE)) {
-      clients = JSON.parse(fs.readFileSync(CLIENTS_FILE));
-    }
     clients[uniqueId] = channel.id;
     fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
   }
